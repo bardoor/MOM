@@ -103,7 +103,7 @@ def decrease_fps(input_video_path: str, target_fps: int):
     os.rename(temp_output_path, input_video_path)
 
 
-def _find_videos(path: str, allowed_video_formats: list[str] = ALLOWED_VIDEO_FORMATS) -> list[str]:
+def _find_videos(path: str, allowed_video_formats: list[str] = ALLOWED_VIDEO_FORMATS) -> list[os.DirEntry]:
     """
     Поиск видео заданных форматов внутри папок в указанной директории
 
@@ -166,79 +166,16 @@ def validate_folder_names(directory: str, allowed_names: list[str]):
     return list(invalid_folders)
 
 
-def to_csv(path_to_videos: str, output_file_name: str, verbose: bool = True):
-    """Создаёт csv-файл, содержащий датасет из обработанных видео
+class C:
 
-    Аргументы:
-        path_to_videos: Путь к директории, содержащей папки с видео
+    def __init__(self, yolo_model: str = "yolov8n-pose.pt") -> None:
+        self.keypoints_loader = VideoKeypointsLoader(yolo_model)
 
-        output_file_name: Имя сгенерированного csv-файла
+    def wrap(self, class_name: str, video: str):
 
-        verbose: Флаг, указывающий, выводить ли подробности об обработке видео (по умолчанию - True)
-    """
-
-    invalid_folders = validate_folder_names(path_to_videos, ACTIVITY_LABELS)
-    if len(invalid_folders) > 0:
-        print(
-            f"Folders that do not match the name of any class were found in {path_to_videos}:")
-        # вывод недопустимых папок через перенос строки
-        print('\n'.join(invalid_folders))
-        print("Generating csv aborted.")
-        return
-
-    if not output_file_name.endswith(".csv"):
-        output_file_name += ".csv"
-
-    videos = _find_videos(path_to_videos)
-    shuffle(videos)
-
-    if verbose:
-        print(f"Found {len(videos)} videos")
-
-    mode = "w"
-    if os.path.exists(output_file_name):
-        ans = input(
-            f"[WARNING]: There's already a file called \"{output_file_name}\".\n" +
-            "\t 1. Overwrite an existing file\n" +
-            "\t 2. Add to the existing file\n" +
-            "\t 3. Cancel csv generation\n" +
-            "Please select the required action (default is 1): "
-        )
-
-        if len(ans) == 0 or int(ans) == 1:
-            mode = "w"
-        elif int(ans) == 2:
-            mode = "a"
-        else:
-            print("Creating csv file aborted")
-            return
-
-    column_names = ["activity"] + [keypoint for keypoint in KEYPOINTS]
-
-    with open(output_file_name, mode) as dataset_file:
-        dataset_file_writer = csv.DictWriter(dataset_file, column_names)
-
-        if mode == "w":
-            dataset_file_writer.writeheader()
-
-        proccessed_videos_count = 0
-        processing_time_log = []
-        for video in videos:
-            video_proc_start = time.time()
-            for frame_keypoints in build_keypoints(video):
-                frame_keypoints = dict(
-                    zip(list(KEYPOINTS.keys()), frame_keypoints))
-                frame_keypoints['activity'] = split_path_tierwise(video)[-2]
-                dataset_file_writer.writerow(frame_keypoints)
-
-            proccessed_videos_count += 1
-            if proccessed_videos_count % 5 == 0 and verbose:
-                processing_time_log.append(time.time() - video_proc_start)
-                time_left = np.mean(processing_time_log) * \
-                    (len(videos) - proccessed_videos_count)
-                print(f"Already proccessed {proccessed_videos_count} videos in {int(processing_time_log[-1])} seconds, {len(videos) - proccessed_videos_count} left...\n" +
-                      f"I predict that there are {int(time_left // 3600)} hours and {int(time_left // 60 - 60 * (time_left // 3600))} minutes left")
-
+        for persons_keypoints in self.keypoints_loader(video):
+            first_person_keypoints = persons_keypoints[0]
+            yield (class_name, *list(first_person_keypoints))
 
 def build_keypoints(video, yolo_model_name: str = "yolov8n-pose.pt", verbose: bool = True):
     """
@@ -293,10 +230,27 @@ def generate(path_to_video, time_steps=TIME_STEPS, step=STEP):
             keypoints[i:(i + time_steps)]), axis=0)
         yield seq
 
+class VideoToCsvWriter:
+
+    def __init__(self, csv_file: str, mode: str):
+        self.output_file = open(str, mode, newline="")
+        self.csv_writer = csv.writer(self.output_file)
+        self.keypoints_loader = VideoKeypointsLoader()
+
+    def write_video(self, activity: str, video: str):
+        for persons_keypoints in self.keypoints_loader(video):
+            first_person_keypoints = persons_keypoints[0]
+            self.csv_writer.writerow([activity, *list(first_person_keypoints)])
 
 class Dataset:
 
-    def __init__(self, videos: str = None, classes: list[str] = None, csv_file: str = None, time_steps: int = 20, step: int = 5):
+    def __init__(self,
+                 videos: str = None,
+                 classes: list[str] = None,
+                 csv_file: str = None,
+                 time_steps: int = 20,
+                 step: int = 5,
+                 verbose: bool = True):
         """
         Параметры:
         ---------
@@ -317,6 +271,7 @@ class Dataset:
             Например, пусть видео содержит 4 кадра (рассмотрим список кадров [1, 2, 3, 4]),
             тогда при time_steps = 2 и step = 1 будут сгенерированы следующие примеры: [1, 2], [2, 3], [3, 4]
         """
+        # TODO: придумать другой нормальный способ проверки типов аргументов
         if videos is None and csv is None:
             raise RuntimeError(
                 "Dataset should be initialized with either videos or csv")
@@ -343,6 +298,7 @@ class Dataset:
         self.csv_file = csv_file
         self.time_steps = time_steps
         self.step = step
+        self.verbose = verbose
 
     def to_csv(self, output_file: str, mode: str = "w", verbose: bool = True):
         """
@@ -374,35 +330,13 @@ class Dataset:
         videos = _find_videos(self.videos)
         shuffle(videos)
 
-        if verbose:
-            print(f"Found {len(videos)} videos")
+        video_to_csv_writer = VideoToCsvWriter(output_file, mode)
 
-        column_names = ["activity"] + [keypoint for keypoint in KEYPOINTS]
+        for video in videos:
+            activity = split_path_tierwise(video.path)[-2]
+            video_to_csv_writer.write_video(activity, video.path)
 
-        with open(output_file_name, mode) as dataset_file:
-            dataset_file_writer = csv.DictWriter(dataset_file, column_names)
-
-            if mode == "w":
-                dataset_file_writer.writeheader()
-
-            proccessed_videos_count = 0
-            processing_time_log = []
-            for video in videos:
-                video_proc_start = time.time()
-                for frame_keypoints in build_keypoints(video):
-                    frame_keypoints = dict(
-                        zip(list(KEYPOINTS.keys()), frame_keypoints))
-                    frame_keypoints['activity'] = split_path_tierwise(
-                        video)[-2]
-                    dataset_file_writer.writerow(frame_keypoints)
-
-                proccessed_videos_count += 1
-                if proccessed_videos_count % 5 == 0 and verbose:
-                    processing_time_log.append(time.time() - video_proc_start)
-                    time_left = np.mean(processing_time_log) * \
-                        (len(videos) - proccessed_videos_count)
-                    print(f"Already proccessed {proccessed_videos_count} videos in {int(processing_time_log[-1])} seconds, {len(videos) - proccessed_videos_count} left...\n" +
-                          f"I predict that there are {int(time_left // 3600)} hours and {int(time_left // 60 - 60 * (time_left // 3600))} minutes left")
+        video_to_csv_writer.close()
 
     def load_data(self):
         """
