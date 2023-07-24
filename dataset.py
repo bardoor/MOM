@@ -1,372 +1,228 @@
-import csv as csv
-import cv2
-import os
-from random import shuffle
-import json
+import csv
+from pathlib import Path
 import time
 
-import numpy as np
 import pandas as pd
-from tensorflow import convert_to_tensor, expand_dims
+import numpy as np
+from numpy import ndarray
 
-from keypoints import VideoKeypointsLoader
-
-with open("config.json", "r") as config:
-    data = json.load(config)
-
-TIME_STEPS = data['yolo_handling']['TIME_STEPS']
-STEP = data['yolo_handling']['STEP']
-ACTIVITY_CLASSES_NUMBER = len(data['yolo_handling']['ACTIVITY_LABELS'])
-ACTIVITY_LABELS = data["yolo_handling"]["ACTIVITY_LABELS"]
-ACTIVITY_LABELS_MAPPING = data['yolo_handling']['ACTIVITY_LABELS_MAPPING']
-ALLOWED_VIDEO_FORMATS = data['video_handling']['ALLOWED_VIDEO_FORMATS']
-KEYPOINTS = data['yolo_handling']['Keypoints']
-
-for label in ACTIVITY_LABELS_MAPPING:
-    ACTIVITY_LABELS_MAPPING[label] = convert_to_tensor(
-        ACTIVITY_LABELS_MAPPING[label])
+from keypoints import KeypointsLoader
+from utils import find_videos, find_missing_folders, format_time
 
 
-def split_path_tierwise(video_file):
-    """
-    Разделить абсолютный путь к файлу по уровням
-
-    Параметры:
-    ---------
-    file: str
-        Файл...
-
-    Возвращает:
-    ----------
-    Список директорий на пути к файлу
-    """
-    hierarchy = []
-    file_path = video_file.path
-
-    while file_path != "":
-        file_path, folder = os.path.split(file_path)
-        if folder != "":
-            hierarchy.insert(0, folder)
-
-    return hierarchy
+__all__ = ('load_data', 'create_from_videos')
 
 
-def decrease_fps(input_video_path: str, target_fps: int):
-    """
-    Уменьшить количество кадров в секунду в видео путём растягивания
-
-    Параметры:
-    ---------
-    input_video_path: str
-        Путь к видео
-    target_fps: int
-        Необходимое количество кадров в секунду
-    """
-    temp_output_path = "temp_output.mp4"
-
-    # Открываем видеофайл
-    video = cv2.VideoCapture(input_video_path)
-
-    # Считываем частоту кадров
-    fps = video.get(cv2.CAP_PROP_FPS)
-
-    if fps <= target_fps:
-        return
-
-    # На обдумывание потомкам
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(temp_output_path, fourcc,
-                          target_fps, (int(video.get(3)), int(video.get(4))))
-
-    # Читаем и конвертируем каждый кадр видео
-    while video.isOpened():
-        ret, frame = video.read()
-
-        if not ret:
-            break
-
-        out.write(frame)
-
-        # Пропускаем кадры чтобы достичь целевого fps
-        skip_frames = round(fps / target_fps) - 1
-        for _ in range(skip_frames):
-            video.read()
-
-    # Закрываем видеофайлы
-    video.release()
-    out.release()
-
-    # Удаляем исходный файл
-    os.remove(input_video_path)
-
-    # Переименовываем временный файл в исходное имя файла
-    os.rename(temp_output_path, input_video_path)
-
-
-def _find_videos(path: str, allowed_video_formats: list[str] = ALLOWED_VIDEO_FORMATS) -> list[os.DirEntry]:
-    """
-    Поиск видео заданных форматов внутри папок в указанной директории
-
-    Параметры:
-    ---------
-    path: str
-        Путь к видео с папками, содержащими видео
-    allowed_video_formats: list[str]
-        Допустимые форматы видео
-
-    Возвращает:
-    ----------
-        Список всех найденных видеофайлов
-    """
-    videos = []
-
-    for directory in os.scandir(path):
-        if not directory.is_dir():
-            continue
-
-        for video_file in os.scandir(directory.path):
-            if not video_file.is_file():
-                continue
-
-            _, ext = os.path.splitext(video_file.path)
-
-            if ext.lower() not in allowed_video_formats:
-                continue
-
-            # Более универсальная штука чем просто возвращать абсолютный путь
-            videos.append(video_file)
-
-    return videos
-
-
-def validate_folder_names(directory: str, allowed_names: list[str]):
-    '''
-    Строгая проверка разрешенности имеён папок в указаной директории
-
-    Параметры:
-    ---------
-    directory: str
-        Путь к директории, в которой валидируются имена папок
-    allowed_names: list[str]
-        Список допустимых имён папок
-
-    Возвращает:
-    ----------
-    invalid_folders
-        Список неразрешенных папок
-    '''
-    invalid_folders = set()
-    for entry in os.scandir(directory):
-        if not entry.is_dir():
-            continue
-
-        if entry.name not in allowed_names:
-            # возможно надо брать путь, но с другой стороны и так понятно где они лежат....
-            invalid_folders.add(entry.name)
-    return list(invalid_folders)
-
-
-class C:
-
-    def __init__(self, yolo_model: str = "yolov8n-pose.pt") -> None:
-        self.keypoints_loader = VideoKeypointsLoader(yolo_model)
-
-    def wrap(self, class_name: str, video: str):
-
-        for persons_keypoints in self.keypoints_loader(video):
-            first_person_keypoints = persons_keypoints[0]
-            yield (class_name, *list(first_person_keypoints))
-
-def build_keypoints(video, yolo_model_name: str = "yolov8n-pose.pt", verbose: bool = True):
-    """
-    Построить ключевые точки человека для указанного видео
-
-    Параметры:
-    ---------
-    video
-        Обрабатываемое видео
-    yolo_model_name: str
-        Используемая модель YOLO-pose
-    verbose: bool
-        Флаг для вывода подробностей об обработке видео
-
-    Возвращает:
-    ----------
-    Генератор ключевых точек человека для каждого кадра видео
-    """
-    keypoints_loader = VideoKeypointsLoader(yolo_model_name)
-
-    video_path = os.path.abspath(video.path)
-
-    if verbose:
-        print(f"Processing \"{video.path}\"...")
-
-    video_keypoints = keypoints_loader(video_path)
-
-    for frame_keypoints in video_keypoints:
-        first_person_keypoints = frame_keypoints[0]
-        yield first_person_keypoints
-
-
-def generate(path_to_video, time_steps=TIME_STEPS, step=STEP):
-    """Генерирует последовательности кадров (кейпоинтов) из видео
-    с заданным размером и шагом
-
-    Аргументы:
-        path_to_video: Путь к видео
-
-        time_steps: Сколько массивов кейпоинтов будет содержаться
-        в одной последовательности (по умолчанию - 20)
-
-        step: Насколько кадров (кейпоинтов) следующая последовательность
-        опережает текущую (по умолчанию - 5)
-    """
-
-    keypoints_loader = VideoKeypointsLoader("yolo8x-pose-p6.pt")
-
-    keypoints = keypoints_loader.load(path_to_video)
-    for i in range(0, len(keypoints) - time_steps, step):
-        seq = expand_dims(convert_to_tensor(
-            keypoints[i:(i + time_steps)]), axis=0)
-        yield seq
-
-class VideoToCsvWriter:
-
-    def __init__(self, csv_file: str, mode: str):
-        self.output_file = open(str, mode, newline="")
-        self.csv_writer = csv.writer(self.output_file)
-        self.keypoints_loader = VideoKeypointsLoader()
-
-    def write_video(self, activity: str, video: str):
-        for persons_keypoints in self.keypoints_loader(video):
-            first_person_keypoints = persons_keypoints[0]
-            self.csv_writer.writerow([activity, *list(first_person_keypoints)])
-
-class Dataset:
+class _CsvFromVideos:
 
     def __init__(self,
-                 videos: str = None,
-                 classes: list[str] = None,
-                 csv_file: str = None,
-                 time_steps: int = 20,
-                 step: int = 5,
-                 verbose: bool = True):
-        """
-        Параметры:
-        ---------
-        videos: str
-            Путь к папкам с видео
-
-        classes: list[str]
-            Названия папок с видео, из которых нужно создать датасет
-
-        csv_file: str
-            Имя csv датасет-файла
-
-        time_steps: int
-            Количество кадров, которое содержит один пример из датасета (по умолчанию - 20)
-
-        step: int
-            Количество кадров на которое отстаёт два последовательных примера друг от друга (по умолчанию - 5).
-            Например, пусть видео содержит 4 кадра (рассмотрим список кадров [1, 2, 3, 4]),
-            тогда при time_steps = 2 и step = 1 будут сгенерированы следующие примеры: [1, 2], [2, 3], [3, 4]
-        """
-        # TODO: придумать другой нормальный способ проверки типов аргументов
-        if videos is None and csv is None:
-            raise RuntimeError(
-                "Dataset should be initialized with either videos or csv")
-
-        if videos is not None and csv is not None:
-            raise RuntimeError(
-                "Dataset should be initialized with only videos or csv")
-
-        if videos is not None and classes is None:
-            raise RuntimeError("No classes were provided for dataset")
-
-        if videos is None and classes is not None:
-            raise RuntimeError("No videos were provided for dataset")
-
-        if csv is not None and classes is not None:
-            raise RuntimeError("Can't specify classes for csv file")
-
-        if not isinstance(time_steps, int) or not isinstance(step, int) or time_steps <= 0 or step <= 0:
-            raise RuntimeError(
-                "Time steps and step should be positive integers")
-
-        self.videos = videos
-        self.classes = classes
-        self.csv_file = csv_file
-        self.time_steps = time_steps
-        self.step = step
+                 yolo_model: str,
+                 verbose: bool = True
+                 ) -> None:
+        self.kl = KeypointsLoader(yolo_model)
         self.verbose = verbose
 
-    def to_csv(self, output_file: str, mode: str = "w", verbose: bool = True):
-        """
-        Создаёт csv-файл, содержащий датасет из обработанных видео
+    def _log_on_find_videos_end(self) -> None:
+        if self.verbose:
+            print(f"Found {self._total_videos_count} videos\n")
 
-        Параметры:
-        ---------
-        output_file: str
-            Имя csv файла
+    def _log_on_open_csv_end(self,
+                             csv_file: str | Path,
+                             mode: str
+                             ) -> None:
+        if self.verbose:
+            if mode == "a":
+                print(f"Appending data to dataset file \"{str(csv_file)}\"\n")
+            elif mode == "w":
+                print(f"Created dataset file \"{str(csv_file)}\"\n")
 
-        mode: str
-            Режим открытия для csv файла, совпадает по значениям с режимами
-            открытия файлов в функции open (по умолчанию - "w")
+    def _find_videos(self,
+                     classes_dir: str | Path) -> None:
+        self._videos = find_videos(classes_dir)
+        self._total_videos_count = len(self._videos)
+        self._log_on_find_videos_end()
 
-        verbose: bool
-            Флаг, указывающий, выводить ли подробности об обработке видео (по умолчанию - True)
-        """
-        if self.videos is None:
-            raise RuntimeError("No videos were provided for dataset")
+    def _open_csv(self,
+                  file_name: str | Path,
+                  mode: str
+                  ) -> None:
+        self._dataset_file = open(file_name, mode, newline="")
+        self._csv_writer = csv.writer(self._dataset_file)
+        self._log_on_open_csv_end(file_name, mode)
 
-        invalid_folders = validate_folder_names(self.videos, self.classes)
-        if len(invalid_folders) > 0:
-            raise RuntimeError("Folders that do not match the name of any class were found in \"{self.videos}\":\n" +
-                               "\n".join(invalid_folders))
+    def _close_csv(self) -> None:
+        self._dataset_file.close()
 
-        if not output_file_name.endswith(".csv"):
-            output_file_name += ".csv"
+    def _log_on_process_video_end(self,
+                                  video_path: str | Path,
+                                  processing_time: float
+                                  ) -> None:
+        if self.verbose:
+            formatted_time = format_time(processing_time)
+            print(f"{self._processed_videos_count}/{self._total_videos_count}: processed \"{str(video_path)}\" in {formatted_time}\n")
 
-        videos = _find_videos(self.videos)
-        shuffle(videos)
+    def _process_video(self,
+                       activity: str,
+                       video: str | Path
+                       ) -> float:
+        start_time = time.time()
+        for persons_keypoints in self.kl(video):
+            first_person_keypoints = persons_keypoints[0]
+            self._csv_writer.writerow(
+                [activity, *list(first_person_keypoints)])
+        processing_time = time.time() - start_time
 
-        video_to_csv_writer = VideoToCsvWriter(output_file, mode)
+        self._processed_videos_count += 1
 
-        for video in videos:
-            activity = split_path_tierwise(video.path)[-2]
-            video_to_csv_writer.write_video(activity, video.path)
+        self._log_on_process_video_end(video, processing_time)
 
-        video_to_csv_writer.close()
+        return processing_time
 
-    def load_data(self):
-        """
-        Загружает датасет в виде матриц numpy
-        """
-        if self.csv_file is None:
-            raise RuntimeError("No csv file was provided for dataset")
+    def _log_on_process_videos_end(self) -> None:
+        if self.verbose:
+            formatted_time = format_time(self._total_processing_time)
+            ending = "s" if self._total_videos_count > 0 else ""
+            print(
+                f"It took {formatted_time} to process {self._total_videos_count} video{ending}\n")
 
-        Xs, ys = [], []
+    def _log_remaining_time(self) -> None:
+        if self.verbose:
+            mean_processing_time = self._total_processing_time / self._processed_videos_count
+            time_left = mean_processing_time * \
+                (self._total_videos_count - self._processed_videos_count)
+            print(f"Already processed {self._processed_videos_count} videos in {format_time(self._total_processing_time)}, " +
+                  f"{self._total_videos_count - self._processed_videos_count} left...")
+            print(f"I predict that there are {format_time(time_left)} left\n")
 
-        df = pd.read_csv(self.csv_file)
-        X = df.drop(columns=["activity"]).to_numpy()
-        y = df.activity.to_numpy()
+    def _process_videos(self) -> None:
+        self._processed_videos_count = 0
 
-        for i in range(0, len(X) - self.time_steps, self.step):
-            series = X[i:(i + self.time_steps)]
-            labels = y[i:(i + self.time_steps)]
+        self._total_processing_time = 0
 
-            # Т.к. кейпоинты в csv-датасете идут подряд, то возможна ситуация,
-            # когда в результате сдвига образуется последовательность из смешанных примеров, т.е.
-            # "jumps", 1.23, 4.56, ...
-            # "jumps", 1.23, 4.56, ...
-            # "sit-ups", 0.45, 1.23, ...
-            # В случае когда размер примера равен 3 (time_steps = 3), будет создан пример из нескольких меток
-            # что является недопустимым. Поэтому, прежде чем генерировать новый пример,
-            # необходимо проверить, что были извлечены только уникальные метки
-            if len(pd.unique(labels)) != 1:
-                continue
+        for i, video in enumerate(self._videos, start=1):
+            activity = video.parts[-2]
+            self._total_processing_time += self._process_video(activity, video)
 
-            Xs.append(series)
-            ys.append(labels[0])
+            if i % 5 == 0:
+                self._log_remaining_time()
 
-        return np.array(Xs), np.array(ys)
+        self._log_on_process_videos_end()
+
+    def __call__(self,
+                 file_name: str | Path,
+                 classes_dir: str | Path,
+                 mode: str
+                 ) -> None:
+        self._open_csv(file_name, mode)
+        self._find_videos(classes_dir)
+        self._process_videos()
+        self._close_csv()
+
+
+def create_from_videos(
+        output_file_name: str | Path,
+        videos_dir: str | Path,
+        classes: list[str],
+        mode: str = "w",
+        yolo_model: str = "yolov8n-pose.pt",
+        verbose: bool = True
+) -> None:
+    """
+        Создает csv-файл датасета из папок с видео.
+
+    Параметры:
+    ---------
+    output_file_name: str | Path
+        Имя выходного csv-файла с датасетом или путь к нему.
+
+    videos_dir: str | Path
+        Путь к папкам с видео.
+
+    classes: list[str]
+        Список папок (классов) для записи.
+
+    mode: str = "w"
+        Режим открытия файла с датасетом.
+
+    yolo_model: str = "yolovn8-pose.pt"
+        Имя pose-модель YOLO для выделения кейпоинтов из видео.
+
+    verbose: bool = True
+        Флаг, указывающий, выводить ли подробности об обработке видео.
+     """
+    missing_classes = find_missing_folders(videos_dir, classes)
+    if missing_classes:
+        raise RuntimeError(f"Couldn't found such classes: {missing_classes}")
+
+    videos_to_csv = _CsvFromVideos(yolo_model, verbose)
+    videos_to_csv(output_file_name, videos_dir, mode)
+
+
+def load_data(
+        csv_file: str | Path,
+        size: int = 20,
+        shift: int = 5,
+        test_split: float = 0.2
+) -> tuple[tuple[ndarray, ndarray], tuple[ndarray, ndarray]]:
+    """
+    Загружает обучающую выборку и тестовую выборку из файла датасета.
+
+    Параметры:
+    ---------
+    csv_file: str | Path
+        Имя csv-файла с датасетом или путь к нему.
+
+    size: int = 20
+        Размер одного обучающего примера.
+
+    shift: int = 5
+        Сдвиг между двумя последовательными обучающими примерами.
+        Например, пусть видео содержит 4 кадра (рассмотрим список кадров [1, 2, 3, 4]),
+        тогда при size = 2 и shift = 1 будут сгенерированы следующие примеры: [1, 2], [2, 3], [3, 4].
+
+    test_split: float = 0.2
+        Часть всей выборки, которая будет отнесена к тестовой.
+
+    Возвращает:
+    ----------
+        Обучающая и тестовая выборки
+    """
+    if not Path(csv_file).exists():
+        raise RuntimeError(f"Dataset file \"{csv_file}\" doesn't exist")
+
+    if test_split <= 0 or test_split >= 1:
+        raise RuntimeError(f"test_split should be in range (0; 1), got \"{test_split}\"")
+
+    dataset = pd.read_csv(csv_file, header=None)
+
+    features = dataset.iloc[:, 1:].to_numpy(dtype="f4")
+    labels = dataset.iloc[:, 0].to_numpy(dtype="U")
+
+    x_train, y_train = [], []
+
+    for i in range(0, len(features) - size, shift):
+        x = features[i:(i + size)]
+        y = labels[i:(i + size)]
+
+        # Т.к. кейпоинты в csv-датасете идут подряд, то возможна ситуация,
+        # когда в результате сдвига образуется последовательность из смешанных примеров, т.е.
+        # "jumps", 1.23, 4.56, ...
+        # "jumps", 1.23, 4.56, ...
+        # "sit-ups", 0.45, 1.23, ...
+        # В случае когда размер примера равен 3 (size = 3), будет создан пример из нескольких меток,
+        # что является недопустимым. Поэтому, прежде чем генерировать новый пример,
+        # необходимо проверить, что были извлечены только уникальные метки.
+        if y[0] != y[-1]:
+            continue
+
+        x_train.append(x)
+        y_train.append(y[0])
+
+    border = int(len(x_train) * test_split)
+
+    x_test = np.stack(x_train[:border])
+    y_test = np.stack(y_train[:border])
+    x_train = np.stack(x_train[border:])
+    y_train = np.stack(y_train[border:])
+
+    return (x_train, y_train), (x_test, y_test)

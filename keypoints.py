@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Iterator
 
 from torch import cuda
@@ -6,35 +7,35 @@ from ultralytics import YOLO
 from numpy import ndarray
 
 
-class VideoKeypointsLoader:
+class KeypointsLoader:
 
-    def __init__(self, yolo_model: str = "yolov8n-pose.pt"):
+    def __init__(self, yolo_model):
         """
         Параметры:
         ---------
         yolo_model: str
-            Имя pose-модели yolo (по умолчанию - "yolov8n-pose.pt").
-            В случае отсутствия локальной копии, модель будет скачана из интернета
+            Имя pose-модели yolo.
+            В случае отсутствия локальной копии, модель будет скачана из интернета.
         """
         self.yolo_model = YOLO(yolo_model)
 
         if cuda.is_available():
             self.yolo_model.to("cuda")
 
-    def __call__(self, path: str) -> Iterator[ndarray]:
+    def __call__(self, video_path: str | Path, batch_size: int = 1) -> Iterator[ndarray]:
         """
         Получить кейпоинты со всех кадров видео, содержащих людей
 
         Параметры:
         ---------
-        path: str
+        video_path: str
             Путь к видео-файлу
         
         Возвращает:
         ----------
         Итератор кейпоинтов со всех кадров видео, содержащих людей
         """
-        cap = cv2.VideoCapture(path)
+        cap = cv2.VideoCapture(str(Path(video_path)))
         while cap.isOpened():
             success, frame = cap.read()
 

@@ -36,7 +36,7 @@ class ActionEstimationModel:
         self.model.load_weights(weights)
 
     def train(self, dataset_file, output_weights="best_model.h5"):
-        Xs, ys = dataset.create_dataset(dataset_file)
+        (x_train, y_train), (x_test, y_test) = dataset.load_data(dataset_file)
 
         callbacks = [
             # EarlyStopping(monitor='val_loss', patience=10),
