@@ -1,3 +1,4 @@
+cv2
 tensorflow
 ultralytics
 pandas
