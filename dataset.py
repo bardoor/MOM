@@ -1,4 +1,5 @@
 import csv
+from collections import defaultdict
 from pathlib import Path
 import time
 
@@ -50,7 +51,7 @@ class _CsvFromVideos:
     def _process_video(self, activity, video):
         start_time = time.time()
         for persons_keypoints in self.kl(video):
-            first_person_keypoints = persons_keypoints[0]
+            first_person_keypoints = persons_keypoints[0][0]
             self._csv_writer.writerow(
                 [activity, *list(first_person_keypoints)])
         processing_time = time.time() - start_time
