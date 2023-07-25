@@ -1,23 +1,19 @@
 {
-    "yolo_handling": {
-        "time_steps": 20,
-        "step": 5,
-        "classes": [
-            "jumps_2",
-            "jumps_left",
-            "jumps_right",
-            "sit-ups_narrow",
-            "sit-ups_ord",
-            "tilts_body",
-            "tilts_head",
-            "trash"
-        ]
-    },
-
-    "keras_handling": {
+    "classes": [
+        "jumps_2",
+        "jumps_left",
+        "jumps_right",
+        "sit-ups_narrow",
+        "sit-ups_ord",
+        "tilts_body",
+        "tilts_head"
+    ],
+    "default_class": "unknown", 
+    "yolo": "yolov8n-pose.pt",
+    "training": {
+        "sample_size": 20,
+        "shift": 5,
         "epochs": 250,
-        "batch_size": 256,
-        "validation_split": 0.2,
-        "shuffle": 0
+        "batch_size": 256
     }
 }
