@@ -23,11 +23,11 @@ parser.add_argument("-t", "--train", type=str, default=None,
 parser.add_argument("-m", "--model", type=str, default=None,
                     help="Путь к модели классификатора")
 parser.add_argument("-p", "--predict", type=str, default=None,
-                    help="Путь к видео, для котрого небходимо сделать прогноз")
+                    help="Путь к видео, для которого небходимо сделать прогноз")
 parser.add_argument("-v", "--verbose", type=bool, default=True,
                     help="Флаг, указывающий, выводить ли подробности об обработке данных")
 parser.add_argument("-a", "--accuracy", type=bool, default=True,
-                    help="Флаг, указывающий, выводить ли график кривой точность модели во время обучения")
+                    help="Флаг, указывающий, выводить ли график кривой точности модели во время обучения")
 parser.add_argument("-c", "--chart", type=bool, default=False,
                     help="Флаг, указывающий, выводить ли в конце предсказания график, вместо названия наиболее часто встречающегося класса в консоль")
 
