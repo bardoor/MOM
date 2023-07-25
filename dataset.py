@@ -4,7 +4,6 @@ import time
 
 import pandas as pd
 import numpy as np
-from numpy import ndarray
 
 from keypoints import KeypointsLoader
 from utils import find_videos, find_missing_folders, format_time
@@ -15,56 +14,40 @@ __all__ = ('load_data', 'create_from_videos')
 
 class _CsvFromVideos:
 
-    def __init__(self,
-                 yolo_model: str,
-                 verbose: bool = True
-                 ) -> None:
+    def __init__(self, yolo_model, verbose=True):
         self.kl = KeypointsLoader(yolo_model)
         self.verbose = verbose
 
-    def _log_on_find_videos_end(self) -> None:
+    def _log_on_find_videos_end(self):
         if self.verbose:
             print(f"Found {self._total_videos_count} videos\n")
 
-    def _log_on_open_csv_end(self,
-                             csv_file: str | Path,
-                             mode: str
-                             ) -> None:
+    def _log_on_open_csv_end(self, csv_file, mode):
         if self.verbose:
             if mode == "a":
                 print(f"Appending data to dataset file \"{str(csv_file)}\"\n")
             elif mode == "w":
                 print(f"Created dataset file \"{str(csv_file)}\"\n")
 
-    def _find_videos(self,
-                     classes_dir: str | Path) -> None:
+    def _find_videos(self, classes_dir):
         self._videos = find_videos(classes_dir)
         self._total_videos_count = len(self._videos)
         self._log_on_find_videos_end()
 
-    def _open_csv(self,
-                  file_name: str | Path,
-                  mode: str
-                  ) -> None:
+    def _open_csv(self, file_name, mode):
         self._dataset_file = open(file_name, mode, newline="")
         self._csv_writer = csv.writer(self._dataset_file)
         self._log_on_open_csv_end(file_name, mode)
 
-    def _close_csv(self) -> None:
+    def _close_csv(self):
         self._dataset_file.close()
 
-    def _log_on_process_video_end(self,
-                                  video_path: str | Path,
-                                  processing_time: float
-                                  ) -> None:
+    def _log_on_process_video_end(self, video_path, processing_time):
         if self.verbose:
             formatted_time = format_time(processing_time)
             print(f"{self._processed_videos_count}/{self._total_videos_count}: processed \"{str(video_path)}\" in {formatted_time}\n")
 
-    def _process_video(self,
-                       activity: str,
-                       video: str | Path
-                       ) -> float:
+    def _process_video(self, activity, video):
         start_time = time.time()
         for persons_keypoints in self.kl(video):
             first_person_keypoints = persons_keypoints[0]
@@ -78,14 +61,14 @@ class _CsvFromVideos:
 
         return processing_time
 
-    def _log_on_process_videos_end(self) -> None:
+    def _log_on_process_videos_end(self):
         if self.verbose:
             formatted_time = format_time(self._total_processing_time)
             ending = "s" if self._total_videos_count > 0 else ""
             print(
                 f"It took {formatted_time} to process {self._total_videos_count} video{ending}\n")
 
-    def _log_remaining_time(self) -> None:
+    def _log_remaining_time(self):
         if self.verbose:
             mean_processing_time = self._total_processing_time / self._processed_videos_count
             time_left = mean_processing_time * \
@@ -94,7 +77,7 @@ class _CsvFromVideos:
                   f"{self._total_videos_count - self._processed_videos_count} left...")
             print(f"I predict that there are {format_time(time_left)} left\n")
 
-    def _process_videos(self) -> None:
+    def _process_videos(self):
         self._processed_videos_count = 0
 
         self._total_processing_time = 0
@@ -108,46 +91,35 @@ class _CsvFromVideos:
 
         self._log_on_process_videos_end()
 
-    def __call__(self,
-                 file_name: str | Path,
-                 classes_dir: str | Path,
-                 mode: str
-                 ) -> None:
+    def __call__(self, file_name, classes_dir, mode):
         self._open_csv(file_name, mode)
         self._find_videos(classes_dir)
         self._process_videos()
         self._close_csv()
 
 
-def create_from_videos(
-        output_file_name: str | Path,
-        videos_dir: str | Path,
-        classes: list[str],
-        mode: str = "w",
-        yolo_model: str = "yolov8n-pose.pt",
-        verbose: bool = True
-) -> None:
+def create_from_videos(output_file_name, videos_dir, classes, mode="w", yolo_model="yolov8n-pose.pt", verbose=True):
     """
-        Создает csv-файл датасета из папок с видео.
+    Создает csv-файл датасета из папок с видео.
 
     Параметры:
     ---------
-    output_file_name: str | Path
+    output_file_name
         Имя выходного csv-файла с датасетом или путь к нему.
 
-    videos_dir: str | Path
+    videos_dir
         Путь к папкам с видео.
 
-    classes: list[str]
+    classes
         Список папок (классов) для записи.
 
-    mode: str = "w"
+    mode
         Режим открытия файла с датасетом.
 
-    yolo_model: str = "yolovn8-pose.pt"
+    yolo_model="yolovn8-pose.pt"
         Имя pose-модель YOLO для выделения кейпоинтов из видео.
 
-    verbose: bool = True
+    verbose=True
         Флаг, указывающий, выводить ли подробности об обработке видео.
      """
     missing_classes = find_missing_folders(videos_dir, classes)
@@ -158,29 +130,24 @@ def create_from_videos(
     videos_to_csv(output_file_name, videos_dir, mode)
 
 
-def load_data(
-        csv_file: str | Path,
-        size: int = 20,
-        shift: int = 5,
-        test_split: float = 0.2
-) -> tuple[tuple[ndarray, ndarray], tuple[ndarray, ndarray]]:
+def load_data(csv_file, sample_size=20, shift=5, test_split=0.2):
     """
     Загружает обучающую выборку и тестовую выборку из файла датасета.
 
     Параметры:
     ---------
-    csv_file: str | Path
+    csv_file
         Имя csv-файла с датасетом или путь к нему.
 
-    size: int = 20
+    sample_size
         Размер одного обучающего примера.
 
-    shift: int = 5
+    shift
         Сдвиг между двумя последовательными обучающими примерами.
         Например, пусть видео содержит 4 кадра (рассмотрим список кадров [1, 2, 3, 4]),
-        тогда при size = 2 и shift = 1 будут сгенерированы следующие примеры: [1, 2], [2, 3], [3, 4].
+        тогда при sample_size = 2 и shift = 1 будут сгенерированы следующие примеры: [1, 2], [2, 3], [3, 4].
 
-    test_split: float = 0.2
+    test_split
         Часть всей выборки, которая будет отнесена к тестовой.
 
     Возвращает:
@@ -200,9 +167,9 @@ def load_data(
 
     x_train, y_train = [], []
 
-    for i in range(0, len(features) - size, shift):
-        x = features[i:(i + size)]
-        y = labels[i:(i + size)]
+    for i in range(0, len(features) - sample_size, shift):
+        x = features[i:(i + sample_size)]
+        y = labels[i:(i + sample_size)]
 
         # Т.к. кейпоинты в csv-датасете идут подряд, то возможна ситуация,
         # когда в результате сдвига образуется последовательность из смешанных примеров, т.е.

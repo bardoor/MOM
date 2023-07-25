@@ -7,16 +7,16 @@ from ultralytics.data.utils import VID_FORMATS
 import matplotlib.pyplot as plt
 
 
-def decrease_fps(input_video_path: str, target_fps: int) -> None:
+def decrease_fps(input_video_path, target_fps):
     """
     Уменьшает количество кадров в секунду в видео путём растягивания
 
     Параметры:
     ---------
-    input_video_path: str
+    input_video_path
         Путь к видео
 
-    target_fps: int
+    target_fps
         Необходимое количество кадров в секунду
     """
     temp_output_path = "temp_output.mp4"
@@ -60,13 +60,13 @@ def decrease_fps(input_video_path: str, target_fps: int) -> None:
     os.rename(temp_output_path, input_video_path)
 
 
-def find_videos(path: str | Path, shuffle: bool = True) -> list[Path]:
+def find_videos(path, shuffle=True):
     """
     Поиск видео внутри папок в указанной директории
 
     Параметры:
     ---------
-    path: str | Path
+    path
         Путь к видео с папками, содержащими видео
 
     Возвращает:
@@ -93,16 +93,16 @@ def find_videos(path: str | Path, shuffle: bool = True) -> list[Path]:
     return videos
 
 
-def find_missing_folders(directory: str | Path, folders_names: list[str]) -> list[str]:
+def find_missing_folders(directory, folders_names):
     """
     Ищет недостающие папки в заданной директории
 
     Параметры:
     ---------
-    directory: str | Path
+    directory
         Путь к директории
 
-    folders_names: list[str]
+    folders_names
         Список искомых имен папок
 
     Возвращает:
@@ -121,13 +121,13 @@ def find_missing_folders(directory: str | Path, folders_names: list[str]) -> lis
     return list(set(folders_names) - set(found_folders))
 
 
-def format_time(seconds: float) -> str:
+def format_time(seconds) -> str:
     """
     Создает текстовое представление времени из заданного количества секунд
 
     Параметры:
     ---------
-    seconds: float
+    seconds
         Время в секундах
     
     Возвращает:
