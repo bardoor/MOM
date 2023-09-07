@@ -40,14 +40,13 @@ def create_model(classes_count, dropout=0.2, base_units=16):
         layers.Dense(units=classes_count, activation='softmax')
     ])
 
-    model.compile(
-        loss='categorical_crossentropy',
-        optimizer='adam',
-        metrics=['accuracy']
-    )
+    # model.compile(
+    #    loss='categorical_crossentropy',
+    #    optimizer='adam',
+    #    metrics=['accuracy']
+    # )
 
     return model
-
 
 def train_model(model, dataset_file, sample_size, shift, output_model, **kwargs):
     """

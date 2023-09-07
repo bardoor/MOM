@@ -6,7 +6,7 @@ import sys
 import keras
 
 import dataset
-import model
+import classifier
 from utils import show_pie_chart, show_model_accuracy
 
 
@@ -57,8 +57,8 @@ elif args.train is not None:
     train_config = config["training"]
     classes_count = len(config["classes"])
 
-    m = model.create_model(classes_count)
-    history = model.train_model(
+    m = classifier.create_model(classes_count)
+    history = classifier.train_model(
         model=m,
         dataset_file=args.dataset,
         sample_size=train_config["sample_size"],
@@ -81,7 +81,7 @@ elif args.predict is not None:
     stats = Counter(
         classes[index] if index is not None else default_class
         for index in
-            model.predict(
+            classifier.predict(
                 model=m,
                 video_path=args.predict,
                 yolo_model=config["yolo"],

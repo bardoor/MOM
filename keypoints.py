@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 from torch import cuda
 import cv2
 from ultralytics import YOLO
@@ -43,15 +44,21 @@ class KeypointsLoader:
 
             # Извлекаем с кадра кейпоинты людей (класс "0" обозначет людей)
             results = self.yolo_model(frame, classes=0, verbose=False)
-            keypoints = results[0].keypoints.xyn.numpy()
+            keypoints = results[0].keypoints.xyn.numpy()[0, :, :] # тут мы извлекаем только первого человека на кадре
 
             if keypoints.size > 0:
-                keypoints = keypoints.reshape(-1, 34)
+                keypoints = keypoints.reshape(34)
                 batch.append(keypoints)
                 
                 if len(batch) == batch_size:
-                    yield batch
+                    yield np.array(batch)
                     batch = []
+        
+        if len(batch) > 0:
+            padded_frames_count = 20 - len(batch)
+            for _ in range(padded_frames_count):
+                batch.append(np.zeros((34,)))
+            yield np.array(batch)
 
         cap.release()
         cv2.destroyAllWindows()
