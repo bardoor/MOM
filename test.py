@@ -49,7 +49,7 @@ class VideoClassifier:
                 pred_classes.append(pred_class)
             
             stats = Counter(pred_classes)
-            most_common_class = stats.most_common(1)[0]
+            most_common_class = stats.most_common(1)[0][0]
 
             print("common")
 
