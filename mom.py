@@ -85,7 +85,7 @@ elif args.predict is not None:
                 model=m,
                 video_path=args.predict,
                 yolo_model=config["yolo"],
-                batch_size=config["sample_size"]
+                batch_size=config["training"]["sample_size"]
             )
     )
 

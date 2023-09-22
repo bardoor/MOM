@@ -1,4 +1,5 @@
 from collections import Counter
+import glob
 
 from tensorflow import keras
 import numpy as np
@@ -26,10 +27,6 @@ class VideoClassifier:
         self.classifier_net.load_weights("pretrained.h5")
         self.fps = 20
         self.deviation_threshold = 0.1
-    
-    def f(self, v):
-        for frames in self.keypoints_loader(v, 20):
-            print(frames.shape)
 
     def classify(self, videos):
         results = []
@@ -38,29 +35,34 @@ class VideoClassifier:
             videos = [videos]
 
         for video in videos:
-            print("in videos")
+            print(f"Processing video \"{video}\"", end="", flush=True)
 
             pred_classes = []
 
             for frames in self.keypoints_loader(video, batch_size=self.fps):
-                print("in frames")
+                print(".", end="", flush=True)
                 pred = self.classifier_net(np.array([frames]))[0]
-                pred_class = np.std(pred) > self.deviation_threshold if np.argmax(pred) else None
+                pred_class = np.argmax(pred) if np.std(pred) > self.deviation_threshold else None
                 pred_classes.append(pred_class)
             
             stats = Counter(pred_classes)
             most_common_class = stats.most_common(1)[0][0]
 
-            print("common")
+            results.append(most_common_class)
 
-            if most_common_class is None:
-                results.append("unknown")
-            else:
-                results.append(CLASSES[most_common_class])
-
+            print()
 
         return results
     
+    def calculate_accuracy(self, label, videos):
+        predicted_labels = self.classify(videos)
+        return predicted_labels.count(label) / len(predicted_labels)
+    
 
 vc = VideoClassifier()
-print(vc.classify("C:\Projects\Repos\MOM\dataset\jumps_2\document_5253781099443663757.mp4"))
+
+
+for class_ in CLASSES[1:]:
+    print(f"Calculating precision for {class_}:")
+    print(vc.calculate_accuracy(class_, glob.glob(f"videos/{class_}/*")))
+    print()
